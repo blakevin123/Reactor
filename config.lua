@@ -29,7 +29,7 @@ local cfg = {}
 -- the Extreme Reactors config in your pack (default "max reactor size" is
 -- usually 32 wide/deep; height limit is often larger).  Verify in-game before
 -- going huge -- an invalid multiblock will not form.
-cfg.size = { x = 32, y = 32, z = 32 }
+cfg.size = { x = 5, y = 5, z = 5 }
 
 -- Minimum corner of the reactor in world coordinates.  CHANGE THIS to where
 -- you want the reactor built.  Build site should be clear air (the turtles
