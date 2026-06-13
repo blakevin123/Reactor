@@ -19,7 +19,7 @@ local cfg = dofile("/config.lua")
 -- ---------------------------------------------------------------------------
 -- Peripherals
 -- ---------------------------------------------------------------------------
-local me = peripheral.find("meBridge") or peripheral.find("me_bridge")
+local me = peripheral.find("me_bridge")
 if not me then error("no ME Bridge found next to this computer") end
 
 local modem = peripheral.find("modem")
