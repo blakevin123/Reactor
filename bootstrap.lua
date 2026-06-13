@@ -26,7 +26,7 @@ end
 -- >>> SET THIS to where your raw files live, and keep the trailing slash <<<
 -- GitHub repo:  https://raw.githubusercontent.com/USER/REPO/main/
 -- GitHub gist:  https://gist.githubusercontent.com/USER/GISTID/raw/
-local BASE = "https://raw.githubusercontent.com/USER/REPO/main/"
+local BASE = "https://raw.githubusercontent.com/blakevin123/Reactor/main/"
 
 local FILES = {
   "config.lua", "plan.lua", "nav.lua", "protocol.lua",
