@@ -1,29 +1,27 @@
 --[[
   install.lua  -  One-command downloader for the Reactor build swarm.
 
-  Run on any in-game computer/turtle (needs HTTP enabled, which ATM10 has):
+  Run on any in-game computer/turtle (needs HTTP enabled, which ATM10 has).
 
+  Install the programs onto THIS computer/turtle:
       wget run https://raw.githubusercontent.com/blakevin123/Reactor/main/install.lua
 
-  By default it grabs every core file. Pass a role to also prep extras:
+  Build a programming FLOPPY (insert a disk in an adjacent drive first):
+      wget run https://raw.githubusercontent.com/blakevin123/Reactor/main/install.lua disk
 
-      install master     -> core files (run 'master' after)
-      install worker      -> core files (run 'worker' after)
-      install supply      -> core files (run 'supply' after)
-      install disk         -> also writes the worker files onto an inserted floppy
-                              at /disk so it becomes a programming disk
+  NOTE: with `wget run`, arguments go AFTER the url. The word `disk` above is
+  what selects floppy mode.
 ]]
 
 local USER, REPO, BRANCH = "blakevin123", "Reactor", "main"
 local BASE = ("https://raw.githubusercontent.com/%s/%s/%s/"):format(USER, REPO, BRANCH)
 
--- files every computer needs
-local CORE = { "config.lua", "geo.lua", "layout.lua" }
--- role programs
+local CORE     = { "config.lua", "geo.lua", "layout.lua" }
 local PROGRAMS = { "worker.lua", "master.lua", "supply.lua" }
+local WORKER   = { "config.lua", "geo.lua", "layout.lua", "worker.lua" }  -- what a worker needs
 
 local function fetch(remote, localPath)
-  print("GET " .. remote)
+  print("GET " .. remote .. " -> " .. localPath)
   local resp = http.get(BASE .. remote)
   if not resp then error("download failed (HTTP off or bad URL?): " .. remote) end
   local data = resp.readAll()
@@ -38,22 +36,25 @@ end
 
 local role = (...) or "all"
 
--- always grab core + all programs to the local computer
-for _, f in ipairs(CORE) do fetch(f, f) end
-for _, f in ipairs(PROGRAMS) do fetch(f, f) end
-
--- build a programming floppy if asked and a disk is mounted
 if role == "disk" then
-  if not fs.exists("/disk") then
+  -- Find the mounted floppy via the drive peripheral (works for /disk, /disk1, ...)
+  local drive = peripheral.find("drive", function(_, d) return d.getMountPath() ~= nil end)
+  if not drive then
     error("no floppy found - put a disk in an adjacent drive, then run: install disk")
   end
-  fetch("disk/startup.lua", "/disk/startup.lua")
-  for _, f in ipairs({ "config.lua", "geo.lua", "layout.lua", "worker.lua" }) do
-    if fs.exists("/disk/" .. f) then fs.delete("/disk/" .. f) end
-    fs.copy(f, "/disk/" .. f)
+  local mount = "/" .. drive.getMountPath()
+  print("writing programming floppy at " .. mount)
+  fetch("disk/startup.lua", mount .. "/startup.lua")   -- bootstrap that auto-runs on a blank turtle
+  for _, f in ipairs(WORKER) do
+    fetch(f, mount .. "/" .. f)
   end
-  print("Programming floppy ready. Place a blank turtle next to this drive.")
+  print("")
+  print("Floppy ready. Move it to the dock's disk drive and place a blank turtle beside it.")
+  return
 end
 
+-- normal: install programs onto this computer/turtle
+for _, f in ipairs(CORE) do fetch(f, f) end
+for _, f in ipairs(PROGRAMS) do fetch(f, f) end
 print("")
 print("Done. Now run one of:  master  |  worker  |  supply")

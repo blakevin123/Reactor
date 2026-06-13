@@ -130,8 +130,8 @@ cfg.station = {
 -- the master places each fresh worker.  A disk drive holding the worker disk
 -- must sit on one horizontal side of this cell.  The master must be positioned
 -- directly ABOVE this cell so it can placeDown a new turtle into it.
-cfg.autoDeploy = false         -- true = master physically places worker turtles
-cfg.progDock   = { x = -4, y = 74, z = 0 }
+cfg.autoDeploy = true         -- true = master physically places worker turtles
+cfg.progDock   = { x = -65, y = -84, z = -150 }
 
 -------------------------------------------------------------------------
 -- TURTLE INVENTORY SLOT MAP
