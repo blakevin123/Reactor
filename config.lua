@@ -5,7 +5,7 @@
 
   COORDINATE FRAME  (WORLD coordinates — units self-locate via GPS)
   ----------------
-  Every position below is a real Minecraft WORLD coordinate. Each unit gets a
+  Every position below is ad real Minecraft WORLD coordinate. Each unit gets a
   GPS fix at boot to learn where it is and which way it faces, so you need a
   GPS constellation in range of the build site. Press F3 in-game to read the
   coordinates you type in here.
