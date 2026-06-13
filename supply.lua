@@ -31,23 +31,50 @@ local DIR = cfg.station.bridgeExportDir or "up"
 local M = cfg.msg
 
 -- ---------------------------------------------------------------------------
--- Startup self-check: confirm every block ID is real / in stock
+-- Stock query.  Newer Advanced Peripherals uses me.getItems() (a full list)
+-- instead of the removed me.getItem(filter).  We scan it once and build a
+-- name -> count map.  Item count field may be `count` or `amount` depending
+-- on AP version, so we accept either.
 -- ---------------------------------------------------------------------------
-local function amountOf(id)
-  local ok, item = pcall(me.getItem, { name = id })
-  if ok and item and item.amount then return item.amount end
-  return 0
+local function stockMap()
+  local map = {}
+  local ok, items = pcall(me.getItems)
+  if ok and type(items) == "table" then
+    for _, it in ipairs(items) do
+      if it.name then map[it.name] = it.count or it.amount or 0 end
+    end
+  end
+  return map
 end
+
+-- Set of craftable item names (so we can auto-craft shortfalls).
+local function craftableSet()
+  local set = {}
+  local ok, items = pcall(me.getCraftableItems)
+  if ok and type(items) == "table" then
+    for _, it in ipairs(items) do if it.name then set[it.name] = true end end
+  end
+  return set
+end
+
+local CRAFTABLE = craftableSet()
+local CAN_CRAFT = type(me.craftItem) == "function"
 
 local function selfCheck()
   print("=== Supply station self-check ===")
+  local online = true
+  local ok, v = pcall(me.isOnline)
+  if ok then online = v end
+  print("ME Bridge online: " .. tostring(online))
+  local stock = stockMap()
   local ids = {}
   for _, id in pairs(cfg.blocks) do if id then ids[id] = true end end
   ids[cfg.fuelItem] = true
   for id in pairs(ids) do
-    local n = amountOf(id)
+    local n = stock[id] or 0
     if n == 0 then
-      print("  WARNING: 0 in stock (or wrong ID): " .. id)
+      local tag = CRAFTABLE[id] and " (craftable)" or ""
+      print("  WARNING: 0 in stock" .. tag .. ": " .. id)
     else
       print(("  ok %8d  %s"):format(n, id))
     end
@@ -60,18 +87,14 @@ end
 -- ---------------------------------------------------------------------------
 local function exportItem(id, count)
   local filter = { name = id, count = count }
-  -- Try to auto-craft if we're short and it's craftable.
-  local have = amountOf(id)
-  if have < count then
-    local okc, craftable = pcall(me.isItemCraftable, { name = id })
-    if okc and craftable then pcall(me.craftItem, { name = id, count = count - have }) end
-  end
   local ok, exported = pcall(me.exportItem, filter, DIR)
-  if ok and type(exported) == "number" then return exported end
-  -- fallback signature used by some AP versions
-  local ok2, exported2 = pcall(me.exportItemToPeripheral, filter, "minecraft:chest")
-  if ok2 and type(exported2) == "number" then return exported2 end
-  return 0
+  exported = (ok and type(exported) == "number") and exported or 0
+  -- If we couldn't fully supply it and it's craftable, kick off a craft so the
+  -- next trip can finish.  (Crafting is async; the worker takes what it can.)
+  if exported < count and CAN_CRAFT and CRAFTABLE[id] then
+    pcall(me.craftItem, { name = id, count = count - exported })
+  end
+  return exported
 end
 
 -- ---------------------------------------------------------------------------

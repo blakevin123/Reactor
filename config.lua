@@ -152,7 +152,7 @@ cfg.slots = {
   coolantPort = 10,
   fuel        = 16,
 }
-cfg.fuelItem      = "minecraft:charcoal"  -- what workers refuel with
+cfg.fuelItem      = "minecraft:coal"  -- what workers refuel with
 cfg.fuelLowMark   = 200                   -- refuel when fuel level drops below this
 cfg.fuelPerTrip   = 64                    -- charcoal to draw per restock
 
