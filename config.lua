@@ -100,7 +100,7 @@ C.fuel = {
 }
 
 C.master = {
-  pos     = { x = -3, y = 0, z = -3 },
+  pos     = { x = -63, y = -8, z = -144 },
   heading = 1,            -- 1 = facing +x (east)
 }
 
