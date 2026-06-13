@@ -34,7 +34,7 @@ cfg.size = { x = 5, y = 5, z = 5 }
 -- Minimum corner of the reactor in world coordinates.  CHANGE THIS to where
 -- you want the reactor built.  Build site should be clear air (the turtles
 -- WILL dig anything inside the build volume, but a clear site is faster/safer).
-cfg.origin = { x = 0, y = 70, z = 0 }
+cfg.origin = { x = -64, y = -8, z = -144 }
 
 -------------------------------------------------------------------------
 -- FUEL / INTERIOR PATTERN
@@ -62,16 +62,16 @@ cfg.fuelSpacing = 2            -- only used when fuelPattern == "spaced"
 -- supply.lua will also print a warning at startup for any ID it can't find in
 -- the ME system, so you can catch typos before building.
 cfg.blocks = {
-  casing      = "bigreactors:reactorcasing",      -- walls, edges, corners
-  glass       = "bigreactors:reactorglass",       -- optional see-through walls
-  fuelRod     = "bigreactors:reactorfuelrod",     -- interior fuel columns
-  controlRod  = "bigreactors:reactorcontrolrod",  -- top face, above each column
-  controller  = "bigreactors:reactorcontroller",  -- exactly one required
-  powerTap    = "bigreactors:reactorpowertapfe",  -- passive: FE output
-  accessPort  = "bigreactors:reactoraccessport",  -- fuel in / waste out
-  computerPort= "bigreactors:reactorcomputerport",-- optional CC control port
-  coolantPort = "bigreactors:reactorcoolantport", -- active cooling only
-  coolant     = nil,                              -- e.g. "minecraft:water" / a moderator block, or nil for air
+  casing      = "bigreactors:reinforced_reactorcasing",      -- walls, edges, corners
+  glass       = "bigreactors:reinforced_reactorglass",       -- optional see-through walls
+  fuelRod     = "bigreactors:reinforced_reactorfuelrod",     -- interior fuel columns
+  controlRod  = "bigreactors:reinforced_reactorcontrolrod",  -- top face, above each column
+  controller  = "bigreactors:reinforced_reactorcontroller",  -- exactly one required
+  powerTap    = "bigreactors:reinforced_reactorpowertapfe_active",  -- passive: FE output
+  accessPort  = "bigreactors:reinforced_reactorsolidaccessport",  -- fuel in / waste out
+  computerPort= "bigreactors:reinforced_reactorcomputerport",-- optional CC control port
+  coolantPort = "bigreactors:reinforced_reactorcoolantport", -- active cooling only
+  coolant     = "minecraft:iron_block",                              -- e.g. "minecraft:water" / a moderator block, or nil for air
 }
 
 -- Use glass for the (non-port) side walls so you can see inside.  Edges/top/
