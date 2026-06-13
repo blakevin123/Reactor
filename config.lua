@@ -94,7 +94,7 @@ C.swarm = {
 -- Fuel: workers can pull a burnable item from AE2 at the depot and burn it.
 -- Set item = nil to disable (then give turtles fuel by hand / use a fuel mod).
 C.fuel = {
-  item        = "minecraft:charcoal", -- burnable item to pull from the ME system
+  item        = "minecraft:coal", -- burnable item to pull from the ME system
   refuelBelow = 1000,                 -- top up when fuel level drops under this
   requestCount = 16,                  -- how many to pull per restock trip
 }
