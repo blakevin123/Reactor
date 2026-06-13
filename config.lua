@@ -24,7 +24,7 @@ local C = {}
 --==========================================================================
 -- Max in this pack is 32 x 48 x 32. width/depth include the 2 wall blocks.
 C.reactor = {
-  origin = { x = 0, y = 0, z = 0 }, -- min corner; keep at 0,0,0 unless you know why not
+  origin = { x = -63, y = -8, z = -144 }, -- min corner; keep at 0,0,0 unless you know why not
   width  = 6,   -- size along x  (>=3, <=32)
   height = 6,   -- size along y  (>=3, <=48)
   depth  = 6,   -- size along z  (>=3, <=32)
@@ -100,7 +100,7 @@ C.fuel = {
 }
 
 C.master = {
-  pos     = { x = -63, y = -8, z = -144 },
+  pos     = { x = -3, y = 0, z = -3 },
   heading = 1,            -- 1 = facing +x (east)
 }
 
