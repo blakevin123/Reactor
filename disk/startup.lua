@@ -42,9 +42,12 @@ local h = fs.open("/startup.lua", "w")
 h.write('shell.run("worker.lua")\n')
 h.close()
 
--- Mark installed and give the turtle a label.
+-- Mark installed.  NOTE: we deliberately do NOT set a computer label.  A label
+-- makes a turtle keep its ID/files when broken, which also makes it
+-- unstackable.  Placed turtles already persist across reboots/chunk reloads
+-- without a label, so leaving them unlabeled keeps spare turtles stackable for
+-- redeployment.
 local mark = fs.open("/installed", "w"); mark.write(tostring(os.epoch("utc"))); mark.close()
-os.setComputerLabel("worker-" .. os.getComputerID())
 
 print("bootstrap: done - rebooting into worker")
 sleep(0.5)
