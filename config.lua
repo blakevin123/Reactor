@@ -115,7 +115,7 @@ cfg.cruiseBaseY = nil          -- nil = auto (origin.y + size.y + 4)
 -- block directly ABOVE the supply chest (which is directly above the ME
 -- Bridge).  Workers descend here, then turtle.suckDown() from the chest.
 cfg.station = {
-  dock = { x = -4, y = 72, z = 0 },   -- worker stands here, sucks DOWN
+  dock = { x = -68, y = -7, z = -149 },   -- worker stands here, sucks DOWN
   -- The supply computer exports into the chest below the dock with this
   -- direction relative to the ME Bridge.  With chest-on-top-of-bridge it's "up".
   bridgeExportDir = "up",
@@ -131,7 +131,7 @@ cfg.station = {
 -- must sit on one horizontal side of this cell.  The master must be positioned
 -- directly ABOVE this cell so it can placeDown a new turtle into it.
 cfg.autoDeploy = true         -- true = master physically places worker turtles
-cfg.progDock   = { x = -65, y = -84, z = -150 }
+cfg.progDock   = { x = -67, y = -7, z = -148 }
 
 -------------------------------------------------------------------------
 -- TURTLE INVENTORY SLOT MAP
