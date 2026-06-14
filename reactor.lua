@@ -31,7 +31,7 @@
 -- ======================================================================
 local CONFIG = {
   -- Reactor outer size (including the casing shell). Min 3 each.
-  size = { x = 5, y = 5, z = 5 },
+  size = { x = 32, y = 32, z = 32 },
 
   -- Minimum corner of the reactor (smallest X/Y/Z), in world coords.
   origin = { x = -80, y = -58, z = -176 },
@@ -143,6 +143,14 @@ end
 local wanted = { [C.fuelItem] = true }
 for _, id in pairs(C.blocks) do if id then wanted[id] = true end end
 
+local function hasJunk()
+  for s = 1, 16 do
+    local d = turtle.getItemDetail(s)
+    if d and not wanted[d.name] then return true end
+  end
+  return false
+end
+
 -- ----------------------------------------------------------------------
 -- ME Bridge (turtle sits on top; export pushes items up into us)
 -- ----------------------------------------------------------------------
@@ -209,13 +217,14 @@ end
 local function pull(id, want)
   if not me or not id then return end
   while want > 0 do
+    if freeSlots() == 0 and not selectItem(id) then break end   -- no room to receive it
     local ok, n = pcall(me.exportItem, { name = id, count = math.min(want, 64) }, C.meExportDir)
     if ok and type(n) == "number" and n > 0 then
       want = want - n
-    elseif craftAndWait(id, want) then
-      -- crafted some; loop and export again
+    elseif meAmount(id) < 1 and craftAndWait(id, want) then
+      -- ME was genuinely out; a craft ran and stock exists now -> retry
     else
-      break                                     -- not craftable / timed out
+      break   -- got 0 but ME still has it (inventory full) or it's uncraftable
     end
   end
 end
@@ -352,10 +361,12 @@ for lx = 0, SZ.x-1 do for ly = 0, SZ.y-1 do for lz = 0, SZ.z-1 do
   if k then totals[k] = (totals[k] or 0) + 1; usedKeys[k] = true end
 end end end
 
--- How many of each block to carry. Budget the 16 inventory slots: 1 for fuel,
--- 1 per single component, and split the rest among the bulk blocks weighted by
--- how many the build needs - so casing/fuel rods carry several stacks and the
--- turtle makes far fewer dock trips.
+-- How many of each block to carry. Budget the 16 inventory slots: 2 reserved
+-- for fuel (it tops up to 128 coal), 1 per single component, 1 per bulk block
+-- minimum, plus a junk buffer, and split whatever is left among the bulk blocks
+-- weighted by how many the build needs. We must never target more than 16 slots
+-- or the turtle clogs at restock.
+local JUNK_RESERVE = 1                                  -- keep a slot free for dug junk
 local targets = {}
 do
   local bulk, singles = {}, 0
@@ -363,7 +374,7 @@ do
     if SINGLE[k] then singles = singles + 1; targets[k] = math.min(4, totals[k])
     else bulk[#bulk+1] = k; targets[k] = 64 end
   end
-  local extra = math.max(0, 16 - 1 - singles - #bulk)   -- spare slots for more stacks
+  local extra = math.max(0, 16 - 2 - JUNK_RESERVE - singles - #bulk)   -- spare slots for more stacks
   while extra > 0 and #bulk > 0 do
     local best, bestScore
     for _, k in ipairs(bulk) do
@@ -475,7 +486,7 @@ local function build()
     for lx = 0, SZ.x - 1 do
       local zs, ze, zstep = 0, SZ.z - 1, 1
       if not fwdDir then zs, ze, zstep = SZ.z - 1, 0, -1 end
-      if me and freeSlots() <= 1 then restock() end   -- clear dug junk before slots clog
+      if me and freeSlots() <= 1 and hasJunk() then restock() end   -- clear dug junk before slots clog
       goX(O.x + lx)
       for lz = zs, ze, zstep do
         goZ(O.z + lz)
