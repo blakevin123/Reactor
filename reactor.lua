@@ -34,7 +34,7 @@ local CONFIG = {
   size = { x = 5, y = 5, z = 5 },
 
   -- Minimum corner of the reactor (smallest X/Y/Z), in world coords.
-  origin = { x = -51, y = -59, z = -166 },
+  origin = { x = -80, y = -58, z = -176 },
 
   -- Where the turtle is PLACED (on top of the ME Bridge) and which way it
   -- faces: "north"(-Z) "south"(+Z) "east"(+X) "west"(-X).
@@ -60,7 +60,7 @@ local CONFIG = {
   fuelSpacing = 2,
 
   reactorType  = "passive",      -- "passive" | "active"
-  useGlassWalls = false,
+  useGlassWalls = true,
 
   -- Block IDs (verify with F3+H advanced tooltips). coolant = nil -> air interior.
   blocks = {
@@ -73,7 +73,7 @@ local CONFIG = {
     accessPort   = "bigreactors:reinforced_reactorsolidaccessport",
     computerPort = "bigreactors:reinforced_reactorcomputerport",
     coolantPort  = "bigreactors:reinforced_reactorcoolantport",
-    coolant      = "minecraft:iron_block",
+    coolant      = "allthemodium:unobtainium_block",  -- nil = air interior
   },
 
   -- Components on the front (min-Z) face. lx=1..size.x-2, ly=1..size.y-2.
@@ -90,6 +90,7 @@ local CONFIG = {
 
   meExportDir = "up",           -- direction the bridge pushes items (into the turtle)
   craftTimeout = 300,           -- seconds to wait for an ME autocraft before giving up
+  returnLeftovers = true,       -- when done, push all leftover items back into the ME system
 }
 -- ======================================================================
 
@@ -130,6 +131,17 @@ local function selectItem(id)
   end
   return false
 end
+
+local function freeSlots()
+  local n = 0
+  for s = 1, 16 do if turtle.getItemCount(s) == 0 then n = n + 1 end end
+  return n
+end
+
+-- Items we keep (everything the build uses + fuel). Anything else in the
+-- inventory is dug junk to be cleared out at the dock.
+local wanted = { [C.fuelItem] = true }
+for _, id in pairs(C.blocks) do if id then wanted[id] = true end end
 
 -- ----------------------------------------------------------------------
 -- ME Bridge (turtle sits on top; export pushes items up into us)
@@ -377,8 +389,23 @@ local function goBack()
   goY(cruiseY); goX(saved.x); goZ(saved.z); goY(saved.y)
 end
 
+-- Push dug junk (anything not in `wanted`) from the turtle into the ME system,
+-- freeing inventory slots. Reliable underground where dropping in the world
+-- isn't possible (solid rock all around).
+local function dumpJunk()
+  if not me then return end
+  for s = 1, 16 do
+    local d = turtle.getItemDetail(s)
+    if d and not wanted[d.name] then
+      turtle.select(s)
+      pcall(me.importItem, { name = d.name, count = 9999 }, C.meExportDir)
+    end
+  end
+end
+
 local function restock()
   goHome()
+  dumpJunk()                                  -- clear dug junk so there is room to refill
   if countItem(C.fuelItem) < 64 then pull(C.fuelItem, 128 - countItem(C.fuelItem)) end
   refuel()
   for key in pairs(usedKeys) do
@@ -389,6 +416,28 @@ local function restock()
     end
   end
   goBack()
+end
+
+-- When finished, dock and push every leftover item back into the ME system
+-- (the turtle sits on the bridge, so importItem pulls "up" out of the turtle).
+local function returnAll()
+  if not me then return end
+  goHome()
+  print("returning leftovers to the ME system...")
+  for s = 1, 16 do
+    local d = turtle.getItemDetail(s)
+    if d then
+      local guard = 0
+      while countItem(d.name) > 0 do
+        local ok, n = pcall(me.importItem, { name = d.name, count = 9999 }, C.meExportDir)
+        if not (ok and type(n) == "number" and n > 0) then
+          guard = guard + 1
+          if guard > 3 then break end
+          sleep(0.3)
+        end
+      end
+    end
+  end
 end
 
 -- ----------------------------------------------------------------------
@@ -426,6 +475,7 @@ local function build()
     for lx = 0, SZ.x - 1 do
       local zs, ze, zstep = 0, SZ.z - 1, 1
       if not fwdDir then zs, ze, zstep = SZ.z - 1, 0, -1 end
+      if me and freeSlots() <= 1 then restock() end   -- clear dug junk before slots clog
       goX(O.x + lx)
       for lz = zs, ze, zstep do
         goZ(O.z + lz)
@@ -480,5 +530,5 @@ syncPos()                 -- GPS fix before we start (auto-detects start positio
 precraft(totals, C.blocks) -- kick off crafts for any shortfalls so they run in parallel
 restock()                 -- fill up (and fuel) before the first layer
 build()
-goHome()                  -- park on the dock
+if C.returnLeftovers then returnAll() else goHome() end   -- park on the dock, empty inventory
 print("DONE. Insert fuel via the Access Port and activate the Controller.")
