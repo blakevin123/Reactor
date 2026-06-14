@@ -14,21 +14,17 @@ Bridge**.
 
 One turtle, one program, no GPS / rednet / second computer. **Start here.**
 
-### 1. Set up the dock (vertical stack)
+### 1. Set up the dock (just two blocks)
 ```
-   [ turtle start/home ]   <- turtle sits here, sucks DOWN
-   [ chest / barrel     ]   <- ME Bridge fills this
-   [ ME Bridge          ]   <- exports "up" into the chest
+   [ turtle start/home ]   <- turtle sits on top of the bridge
+   [ ME Bridge          ]   <- exports "up" straight into the turtle
 ```
-For the turtle to **command** the ME Bridge it must be on the bridge's wired
-network: give the turtle a **Wired Modem** upgrade (+ a pickaxe), put a wired
-modem on the ME Bridge, and cable it to a wired modem block next to the home
-cell. Don't want to bother? Set `useMEBridge = false` and just keep the dock
-chest filled yourself — the turtle will `suckDown` from it.
+The turtle restocks by calling `me.exportItem({name=ID, count=N}, "up")`, which
+pushes items directly up into its own inventory — **no chest, no wired modem**.
+It pulls fuel the same way, so it can even start with an empty tank.
 
-### 2. Equip & fuel the turtle
-- A **pickaxe** (to dig/clear), and a **wired modem** if `useMEBridge = true`.
-- Some **coal/charcoal in slot 16** to get started.
+### 2. Equip the turtle
+- A **pickaxe** (to dig/clear). That's it — fuel comes from the ME system.
 
 ### 3. Install
 ```
@@ -97,8 +93,8 @@ what goes in `blocks`.
 
 | Symptom | Likely cause |
 |---------|--------------|
-| `ME Bridge: NOT FOUND` | turtle not on the wired network — equip a wired modem, check the modem/cable to the bridge, or set `useMEBridge=false` |
-| turtle won't move | no fuel (put coal in slot 16) or boxed in |
+| `ME Bridge: NOT FOUND` | turtle isn't sitting on top of the ME Bridge, or the block isn't an Advanced Peripherals ME Bridge |
+| turtle won't move | tank empty and ME has no coal, or it's boxed in |
 | builds in the wrong place | `start` coords/facing don't match where you actually placed it |
 | item shows SHORT | not enough in AE2 — craft/stock more (the plan lists the needed count) |
 | multiblock won't form | wrong IDs, size over the pack's max, or a misplaced/duplicate component |

@@ -2,30 +2,26 @@
   reactor.lua  -  Single-turtle Extreme Reactors builder.
 
   One mining turtle builds the whole reactor by itself and restocks blocks +
-  fuel directly from an Advanced Peripherals ME Bridge at a dock. No GPS, no
-  rednet, no second computer.
+  fuel directly from an Advanced Peripherals ME Bridge. No GPS, no rednet, no
+  second computer, no chest, no wired modem.
 
-  HOW IT NAVIGATES
-    The turtle tracks its own position by dead reckoning, starting from the
-    coordinates you give in CONFIG.start. So you must PLACE the turtle on that
-    exact block, FACING the direction you set, before running. (Press F3 to
-    read the block coords; the small "Facing" line tells you the direction.)
+  THE DOCK
+    The turtle's home is the block directly ON TOP of the ME Bridge. To restock
+    it simply calls  me.exportItem({name=ID, count=N}, "up")  and the bridge
+    pushes the items straight up into the turtle's own inventory. So:
+        [ turtle home ]  <- CONFIG.home / CONFIG.start  (sits on the bridge)
+        [ ME Bridge   ]  <- exports "up" into the turtle
+    Fuel works the same way - it pulls coal from the ME system, so the turtle
+    can even start with an empty fuel tank.
 
-  HOW IT RESTOCKS (the dock)  -- vertical stack, simplest layout:
-        [ turtle home cell ]   <- CONFIG.home (turtle sits here, sucks DOWN)
-        [ chest / barrel    ]   <- ME Bridge fills this; turtle suckDown()s it
-        [ ME Bridge         ]   <- exports "up" into the chest
-    For the turtle to COMMAND the bridge it must be on the bridge's wired
-    network: give the turtle a Wired Modem upgrade (plus a pickaxe), put a
-    wired modem on the ME Bridge, and run a cable to a wired modem block next to
-    the home cell. If you'd rather not bother, set CONFIG.useMEBridge=false and
-    just keep the dock chest filled yourself (export bus / by hand) - the turtle
-    will simply suckDown from it.
+  NAVIGATION (dead reckoning, no GPS)
+    The turtle tracks its position starting from CONFIG.start. PLACE it on that
+    exact block, FACING the set direction, before running. (F3 shows coords +
+    facing.) Since home is on top of the bridge, start == home.
 
-  EQUIP: a pickaxe (to dig/clear) and, if useMEBridge, a wired modem.
-  FUEL : put coal/charcoal in slot 16 to start; it refuels itself at the dock.
+  EQUIP: a pickaxe (to dig / clear blocks in the way).
 
-  Install on the turtle:
+  Install:
      wget https://raw.githubusercontent.com/blakevin123/Reactor/main/reactor.lua
      reactor
 ]]
@@ -38,15 +34,14 @@ local CONFIG = {
   size = { x = 5, y = 5, z = 5 },
 
   -- Minimum corner of the reactor (smallest X/Y/Z), in world coords.
-  origin = { x = 0, y = 70, z = 0 },
+  origin = { x = -51, y = -59, z = -166 },
 
-  -- Where the turtle is PLACED and which way it faces, in world coords.
-  -- facing is one of: "north" (-Z), "south" (+Z), "east" (+X), "west" (-X).
-  start = { x = 0, y = 73, z = -2, facing = "south" },
+  -- Where the turtle is PLACED (on top of the ME Bridge) and which way it
+  -- faces: "north"(-Z) "south"(+Z) "east"(+X) "west"(-X).
+  start = { x = -45, y = -59, z = -167, facing = "south" },
 
-  -- The dock cell the turtle returns to for restock (usually same as start).
-  -- It sucks items from the block directly BELOW this cell.
-  home = { x = 0, y = 73, z = -2 },
+  -- Dock cell it returns to for restock = same block, on top of the bridge.
+  home = { x = -45, y = -59, z = -167 },
 
   -- Transit altitude for moving to/from the dock. Must be ABOVE the reactor.
   -- nil = auto (origin.y + size.y + 3).
@@ -82,32 +77,21 @@ local CONFIG = {
     computerPort = { lx = "size.x-2", ly = "size.y-2" },
   },
 
-  -- Inventory slots. Slot 16 reserved for fuel.
-  slots = {
-    casing = 1, glass = 2, fuelRod = 3, controlRod = 4, coolant = 5,
-    controller = 6, powerTap = 7, accessPort = 8, computerPort = 9,
-    coolantPort = 10, fuel = 16,
-  },
-
   fuelItem    = "minecraft:coal",
-  fuelLowMark = 1000,            -- refuel/return when fuel drops below this
+  fuelLowMark = 1000,            -- refuel / return to dock when fuel below this
+  stackTarget = 64,             -- how many of each bulk block to keep on hand
 
-  -- ME Bridge dock plumbing.
-  useMEBridge = true,            -- false = just suckDown from a pre-filled chest
-  meExportDir = "up",           -- direction the BRIDGE pushes items (into the chest)
+  meExportDir = "up",           -- direction the bridge pushes items (into the turtle)
 }
 -- ======================================================================
 
--- ----------------------------------------------------------------------
--- Direction helpers
--- ----------------------------------------------------------------------
+local C  = CONFIG
+local SZ = C.size
+local O  = C.origin
+local SINGLE = { controller=true, powerTap=true, accessPort=true, computerPort=true, coolantPort=true }
+
 local FNAME = { north = 0, east = 1, south = 2, west = 3 }
 local VEC   = { [0]={x=0,z=-1}, [1]={x=1,z=0}, [2]={x=0,z=1}, [3]={x=-1,z=0} }
-
-local C   = CONFIG
-local SZ  = C.size
-local O   = C.origin
-local SINGLE = { controller=true, powerTap=true, accessPort=true, computerPort=true, coolantPort=true }
 
 local function resolve(v)
   if type(v) == "number" then return v end
@@ -120,7 +104,47 @@ end
 local cruiseY = C.cruiseY or (O.y + SZ.y + 3)
 
 -- ----------------------------------------------------------------------
--- State + movement (dead reckoning; digs anything in the way)
+-- Inventory (find blocks by NAME, since the bridge drops them anywhere)
+-- ----------------------------------------------------------------------
+local function countItem(id)
+  local n = 0
+  for s = 1, 16 do
+    local d = turtle.getItemDetail(s)
+    if d and d.name == id then n = n + d.count end
+  end
+  return n
+end
+
+local function selectItem(id)
+  for s = 1, 16 do
+    local d = turtle.getItemDetail(s)
+    if d and d.name == id then turtle.select(s); return true end
+  end
+  return false
+end
+
+-- ----------------------------------------------------------------------
+-- ME Bridge (turtle sits on top; export pushes items up into us)
+-- ----------------------------------------------------------------------
+local me = peripheral.find("me_bridge")
+
+local function pull(id, want)
+  if want <= 0 or not me or not id then return end
+  pcall(me.exportItem, { name = id, count = want }, C.meExportDir)
+end
+
+local function meStock()
+  local map = {}
+  if not me then return map end
+  local ok, items = pcall(me.getItems)
+  if ok and type(items) == "table" then
+    for _, it in ipairs(items) do if it.name then map[it.name] = it.count or it.amount or 0 end end
+  end
+  return map
+end
+
+-- ----------------------------------------------------------------------
+-- Movement (dead reckoning; digs anything in the way)
 -- ----------------------------------------------------------------------
 local pos    = { x = C.start.x, y = C.start.y, z = C.start.z }
 local facing = FNAME[C.start.facing] or error("start.facing must be north/south/east/west")
@@ -129,8 +153,7 @@ local function refuel()
   if turtle.getFuelLevel() == "unlimited" then return end
   if turtle.getFuelLevel() > C.fuelLowMark then return end
   local keep = turtle.getSelectedSlot()
-  turtle.select(C.slots.fuel)
-  while turtle.getFuelLevel() <= C.fuelLowMark and turtle.getItemCount(C.slots.fuel) > 0 do
+  while turtle.getFuelLevel() <= C.fuelLowMark and selectItem(C.fuelItem) do
     if not turtle.refuel(1) then break end
   end
   turtle.select(keep)
@@ -160,6 +183,8 @@ local function goY(ty) while pos.y < ty do up() end;   while pos.y > ty do down(
 local function goX(tx) if pos.x ~= tx then face(tx > pos.x and 1 or 3); while pos.x ~= tx do fwd() end end end
 local function goZ(tz) if pos.z ~= tz then face(tz > pos.z and 2 or 0); while pos.z ~= tz do fwd() end end end
 
+local function atHome() return pos.x == C.home.x and pos.y == C.home.y and pos.z == C.home.z end
+
 -- ----------------------------------------------------------------------
 -- Layout: which block goes at local (lx,ly,lz)? returns a key or nil(air)
 -- ----------------------------------------------------------------------
@@ -172,7 +197,6 @@ local function isFuelColumn(lx, lz)
   return ((lx + lz) % 2) == 0
 end
 
--- Resolve component cells on the front face into a lookup "lx:ly" -> key.
 local compLookup = {}
 do
   local list = {}
@@ -213,7 +237,6 @@ local function blockAt(lx, ly, lz)
   end
 end
 
--- Set of keys actually used, and total count per key.
 local totals, usedKeys = {}, {}
 for lx = 0, SZ.x-1 do for ly = 0, SZ.y-1 do for lz = 0, SZ.z-1 do
   local k = blockAt(lx, ly, lz)
@@ -221,82 +244,47 @@ for lx = 0, SZ.x-1 do for ly = 0, SZ.y-1 do for lz = 0, SZ.z-1 do
 end end end
 
 -- ----------------------------------------------------------------------
--- ME Bridge dock
+-- Restock at the dock
 -- ----------------------------------------------------------------------
-local me = C.useMEBridge and (peripheral.find("me_bridge")) or nil
-
-local function meStock()
-  local map = {}
-  if not me then return map end
-  local ok, items = pcall(me.getItems)
-  if ok and type(items) == "table" then
-    for _, it in ipairs(items) do if it.name then map[it.name] = it.count or it.amount or 0 end end
-  end
-  return map
-end
-
--- Pull `want` of itemId into `slot` via the dock chest below the turtle.
-local function pullInto(slot, itemId, want)
-  if want <= 0 then return 0 end
-  turtle.select(slot)
-  local before = turtle.getItemCount(slot)
-  if me then pcall(me.exportItem, { name = itemId, count = want }, C.meExportDir) end
-  local target = math.min(64, before + want)
-  local guard = 0
-  while turtle.getItemCount(slot) < target do
-    if not turtle.suckDown() then
-      guard = guard + 1
-      if guard > 4 then break end
-      sleep(0.2)
-    end
-  end
-  return turtle.getItemCount(slot) - before
-end
-
 local saved
 local function goHome()
   saved = { x = pos.x, y = pos.y, z = pos.z }
+  if atHome() then return end
   goY(cruiseY); goX(C.home.x); goZ(C.home.z); goY(C.home.y)
 end
 local function goBack()
+  if pos.x == saved.x and pos.y == saved.y and pos.z == saved.z then return end
   goY(cruiseY); goX(saved.x); goZ(saved.z); goY(saved.y)
 end
 
 local function restock()
   goHome()
-  -- fuel
-  if turtle.getItemCount(C.slots.fuel) < 16 then pullInto(C.slots.fuel, C.fuelItem, 64) end
+  if countItem(C.fuelItem) < 32 then pull(C.fuelItem, 64) end
   refuel()
-  -- blocks
   for key in pairs(usedKeys) do
-    local slot, id = C.slots[key], C.blocks[key]
-    if slot and id then
-      local target = SINGLE[key] and 4 or 64
-      local have = turtle.getItemCount(slot)
-      if have < target then pullInto(slot, id, target - have) end
+    local id = C.blocks[key]
+    if id then
+      local target = SINGLE[key] and 4 or C.stackTarget
+      local have = countItem(id)
+      if have < target then pull(id, target - have) end
     end
   end
   goBack()
-end
-
-local function ensure(key)
-  if turtle.getItemCount(C.slots[key]) == 0 then restock() end
 end
 
 -- ----------------------------------------------------------------------
 -- Placing + build
 -- ----------------------------------------------------------------------
 local function placeDownKey(key)
-  ensure(key)
-  local slot = C.slots[key]
-  turtle.select(slot)
+  local id = C.blocks[key]
+  if not selectItem(id) then restock(); selectItem(id) end
   if turtle.detectDown() then
     local ok, data = turtle.inspectDown()
-    if ok and data.name == C.blocks[key] then return end
+    if ok and data.name == id then return end
     turtle.digDown()
   end
   if not turtle.placeDown() then
-    ensure(key); turtle.select(slot)
+    restock(); selectItem(id)
     if turtle.detectDown() then turtle.digDown() end
     turtle.placeDown()
   end
@@ -305,7 +293,7 @@ end
 local function lowOnStock()
   if turtle.getFuelLevel() ~= "unlimited" and turtle.getFuelLevel() < C.fuelLowMark then return true end
   for key in pairs(usedKeys) do
-    if not SINGLE[key] and turtle.getItemCount(C.slots[key]) < 8 then return true end
+    if not SINGLE[key] and countItem(C.blocks[key]) < 8 then return true end
   end
   return false
 end
@@ -335,7 +323,7 @@ end
 -- Startup summary + go
 -- ----------------------------------------------------------------------
 local function summary()
-  print(("=== Reactor builder ==="))
+  print("=== Reactor builder ===")
   print(("size %dx%dx%d at (%d,%d,%d)  %s/%s")
     :format(SZ.x, SZ.y, SZ.z, O.x, O.y, O.z, C.reactorType, C.fuelPattern))
   local stock = meStock()
@@ -345,24 +333,19 @@ local function summary()
     local id = C.blocks[key]
     if me and id then
       local have = stock[id] or 0
-      local flag = (have < n) and "  <-- SHORT" or ""
-      print(("  %-12s need %5d  have %6d%s"):format(key, n, have, flag))
+      print(("  %-12s need %5d  have %6d%s"):format(key, n, have, have < n and "  <-- SHORT" or ""))
     else
       print(("  %-12s need %5d   %s"):format(key, n, id or "?"))
     end
   end
   print(("  TOTAL blocks: %d"):format(grand))
-  if me then print("ME Bridge: connected") else
-    print(C.useMEBridge and "ME Bridge: NOT FOUND (equip wired modem / check network)"
-                        or  "ME Bridge: disabled - turtle will suck from the dock chest")
-  end
-  print("Place confirmed at " .. C.start.x .. "," .. C.start.y .. "," .. C.start.z ..
-        " facing " .. C.start.facing .. "? Building in 5s (Ctrl+T to abort)...")
+  print(me and "ME Bridge: connected" or "ME Bridge: NOT FOUND - place the turtle on top of the bridge")
+  print("Building in 5s (Ctrl+T to abort)...")
 end
 
 summary()
 sleep(5)
-restock()      -- fill up before the first layer
+restock()      -- fill up (and fuel) before the first layer
 build()
-goHome()       -- park at the dock
+goHome()       -- park on the dock
 print("DONE. Insert fuel via the Access Port and activate the Controller.")
