@@ -9,7 +9,10 @@
   when broken, which also makes spare turtles unstackable.
 ]]
 
-if fs.exists("/installed") then return end       -- already a worker; let local startup run
+if fs.exists("/installed") then                   -- already a worker
+  if fs.exists("/worker.lua") then shell.run("worker.lua") end
+  return
+end
 
 local function findDisk()
   for _, n in ipairs({ "/disk", "/disk1", "/disk2", "/disk3", "/disk4", "/disk5", "/disk6" }) do

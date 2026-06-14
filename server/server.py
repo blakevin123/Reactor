@@ -33,6 +33,9 @@ totals = {}          # id -> count for the whole reactor
 workers = {}         # turtleId -> {chunkIndex, dockIndex, cruiseY, layer, placed, done}
 dock_holder = {}     # dockIndex -> turtleId or None
 next_chunk = 0       # next chunk to hand out
+collect_queue = []   # finished worker ids awaiting pickup at HOME (FIFO)
+home_parked = None   # worker id currently parked at HOME for the master to mine
+collected_count = 0  # how many workers the master has mined up
 
 
 def load_config():
@@ -42,18 +45,43 @@ def load_config():
 
 
 def save_config():
+    global config_mtime
     with open(CONFIG_PATH, "w") as f:
         json.dump(cfg, f, indent=2)
+    config_mtime = os.path.getmtime(CONFIG_PATH)
+
+
+config_mtime = 0
 
 
 def regenerate():
     """(Re)build the plan and reset all runtime state. Call under LOCK."""
     global chunks, totals, workers, dock_holder, next_chunk
+    global collect_queue, home_parked, collected_count
     chunks = layout.partition(cfg, cfg.get("workerCount", 8))
     totals = layout.totals(cfg)
     workers = {}
     dock_holder = {i: None for i in range(len(cfg["restock"]["docks"]))}
     next_chunk = 0
+    collect_queue = []
+    home_parked = None
+    collected_count = 0
+
+
+def maybe_reload():
+    """If config.json changed on disk since we last read it, reload + regenerate.
+    Gated on mtime, so the monitor's auto-refresh doesn't reset anything - only an
+    actual file save does. Call under LOCK."""
+    global config_mtime
+    try:
+        m = os.path.getmtime(CONFIG_PATH)
+    except OSError:
+        return
+    if m > config_mtime:
+        load_config()
+        regenerate()
+        config_mtime = m
+        print("config.json changed on disk - reloaded + regenerated")
 
 
 # ---------------------------------------------------------------------------
@@ -95,16 +123,28 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         u = urlparse(self.path)
         if u.path == "/":
-            self._html(monitor_html())
+            with LOCK:
+                maybe_reload()
+                html = monitor_html()
+            self._html(html)
         elif u.path == "/status":
             with LOCK:
+                maybe_reload()
                 self._json(status_obj())
         elif u.path == "/work":
             q = parse_qs(u.query)
             wid = (q.get("id") or ["?"])[0]
             layer = int((q.get("layer") or ["0"])[0])
             with LOCK:
+                maybe_reload()
                 self._json(work_for(wid, layer))
+        elif u.path == "/collect_slot":
+            q = parse_qs(u.query)
+            with LOCK:
+                self._json(collect_slot((q.get("id") or ["?"])[0]))
+        elif u.path == "/collect":
+            with LOCK:
+                self._json(collect_status())
         else:
             self._json({"error": "not found"}, 404)
 
@@ -114,6 +154,7 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/register":
             data = self._read_json()
             with LOCK:
+                maybe_reload()
                 self._json(register(str(data.get("id"))))
         elif u.path == "/dock/acquire":
             data = self._read_json()
@@ -132,10 +173,15 @@ class Handler(BaseHTTPRequestHandler):
         elif u.path == "/done":
             data = self._read_json()
             with LOCK:
-                w = workers.get(str(data.get("id")))
-                if w:
-                    w["done"] = True
+                mark_done(str(data.get("id")))
                 self._json({"ok": True})
+        elif u.path == "/parked":
+            data = self._read_json()
+            with LOCK:
+                self._json(parked(str(data.get("id"))))
+        elif u.path == "/collected":
+            with LOCK:
+                self._json(collected())
         elif u.path == "/config":
             self.apply_config_form(self._read_body())
             self.send_response(303)
@@ -240,6 +286,45 @@ def progress(wid, data):
         w["placed"] = w.get("placed", 0) + int(data.get("placed", 0))
 
 
+# -- collection: bring finished workers back to HOME one at a time so the
+# -- master can mine them up ---------------------------------------------------
+def mark_done(wid):
+    w = workers.get(wid)
+    if w:
+        w["done"] = True
+    if wid in workers and wid not in collect_queue:
+        collect_queue.append(wid)
+
+
+def collect_slot(wid):
+    # front-of-queue worker may return to HOME only when HOME is empty
+    return {"go": bool(home_parked is None and collect_queue and collect_queue[0] == wid)}
+
+
+def parked(wid):
+    global home_parked
+    if collect_queue and collect_queue[0] == wid:
+        home_parked = wid
+    return {"ok": True}
+
+
+def collect_status():
+    if home_parked is not None:
+        return {"mine": True, "done": False}
+    done_all = len(workers) > 0 and collected_count >= len(workers) and not collect_queue
+    return {"mine": False, "done": done_all}
+
+
+def collected():
+    global home_parked, collected_count
+    if home_parked is not None:
+        if collect_queue and collect_queue[0] == home_parked:
+            collect_queue.pop(0)
+        collected_count += 1
+        home_parked = None
+    return {"ok": True}
+
+
 def status_obj():
     return {
         "size": cfg["size"], "origin": cfg["origin"],
@@ -322,9 +407,11 @@ layers: {s['layers']} &nbsp; chunks: {s['chunks']}<br>
 
 # ---------------------------------------------------------------------------
 def main():
+    global config_mtime
     load_config()
     with LOCK:
         regenerate()
+        config_mtime = os.path.getmtime(CONFIG_PATH)
     ok, why = layout.validate(cfg)
     if not ok:
         print("CONFIG WARNING:", why)

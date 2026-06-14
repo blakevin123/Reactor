@@ -1,33 +1,58 @@
 {
-  "server":   { "host": "0.0.0.0", "port": 8080 },
-
-  "size":     { "x": 5, "y": 5, "z": 5 },
-  "origin":   { "x": -80, "y": -58, "z": -176 },
-
-  "fuelPattern":   "checkerboard",
-  "fuelSpacing":   2,
-  "useGlassWalls": true,
-  "workerCount":   8,
-  "cruiseBaseY":   null,
-
-  "blocks": {
-    "casing":     "bigreactors:reinforced_reactorcasing",
-    "glass":      "bigreactors:reinforced_reactorglass",
-    "fuelRod":    "bigreactors:reinforced_reactorfuelrod",
-    "controlRod": "bigreactors:reinforced_reactorcontrolrod",
-    "coolant":    "allthemodium:unobtainium_block"
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8080
   },
-
+  "size": {
+    "x": 5,
+    "y": 5,
+    "z": 5
+  },
+  "origin": {
+    "x": -80,
+    "y": -58,
+    "z": -176
+  },
+  "fuelPattern": "checkerboard",
+  "fuelSpacing": 2,
+  "useGlassWalls": true,
+  "workerCount": 8,
+  "cruiseBaseY": null,
+  "blocks": {
+    "casing": "bigreactors:reinforced_reactorcasing",
+    "glass": "bigreactors:reinforced_reactorglass",
+    "fuelRod": "bigreactors:reinforced_reactorfuelrod",
+    "controlRod": "bigreactors:reinforced_reactorcontrolrod",
+    "coolant": "allthemodium:unobtainium_block"
+  },
   "fuelItem": "minecraft:coal",
-
-  "home": { "x": -45, "y": -59, "z": -167 },
-
+  "home": {
+    "x": -45,
+    "y": -59,
+    "z": -167
+  },
   "restock": {
     "docks": [
-      { "x": -64, "y": -59, "z": -183 },
-      { "x": -64, "y": -59, "z": -184 },
-      { "x": -64, "y": -59, "z": -185 },
-      { "x": -64, "y": -59, "z": -186 }
+      {
+        "x": -64,
+        "y": -58,
+        "z": -183
+      },
+      {
+        "x": -64,
+        "y": -58,
+        "z": -184
+      },
+      {
+        "x": -64,
+        "y": -58,
+        "z": -185
+      },
+      {
+        "x": -64,
+        "y": -58,
+        "z": -186
+      }
     ]
   }
 }

@@ -278,8 +278,21 @@ local function main()
   end
 
   httpJSON("POST", "/done", { id = id })
-  log("chunk complete - returning home")
-  goY(A.cruiseY); goX(A.home.x); goZ(A.home.z); goY(A.home.y)
+  log("chunk complete - waiting to be collected")
+  goY(A.cruiseY)                                  -- hover at my unique altitude
+
+  -- wait our turn (HOME holds one worker at a time for the master to mine)
+  while true do
+    local r = httpJSON("GET", "/collect_slot?id=" .. id)
+    if r and r.go then break end
+    sleep(1)
+  end
+
+  -- descend onto HOME, in front of the master, and idle until it mines us
+  goX(A.home.x); goZ(A.home.z); goY(A.home.y)
+  httpJSON("POST", "/parked", { id = id })
+  log("parked at home - awaiting pickup")
+  while true do sleep(5) end
 end
 
 main()
