@@ -10,9 +10,9 @@ Bridge**.
 
 ---
 
-## Recommended: single turtle — `reactor.lua`
+## `reactor.lua`
 
-One turtle, one program, no GPS / rednet / second computer. **Start here.**
+One turtle, one program — no GPS, rednet, or second computer.
 
 ### 1. Set up the dock (just two blocks)
 ```
@@ -64,17 +64,6 @@ finishes: insert fuel via the **Access Port** and activate the **Controller**.
   and enough bulk blocks; the plan printout tells you exactly how many.
 - Build site clear of obstructions is fastest, but it will dig through terrain
   inside the build volume and along its path.
-
----
-
-## Advanced: the multi-turtle swarm
-
-The repo also contains the original swarm (`master.lua`, `worker.lua`,
-`supply.lua`, `config.lua`, `layout.lua`, `geo.lua`, `disk/startup.lua`) which
-splits the build across several turtles coordinated over rednet, with a separate
-ME Bridge supply server. It's faster but much more setup (GPS constellation,
-programming dock, per-turtle modems/fuel, dock locks). Prefer `reactor.lua`
-unless you specifically need the parallelism.
 
 ---
 
