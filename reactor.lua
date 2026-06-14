@@ -79,7 +79,6 @@ local CONFIG = {
 
   fuelItem    = "minecraft:coal",
   fuelLowMark = 1000,            -- refuel / return to dock when fuel below this
-  stackTarget = 64,             -- how many of each bulk block to keep on hand
 
   meExportDir = "up",           -- direction the bridge pushes items (into the turtle)
 }
@@ -128,9 +127,14 @@ end
 -- ----------------------------------------------------------------------
 local me = peripheral.find("me_bridge")
 
+-- Pull up to `want` of an item into the turtle, in 64-chunks so multi-stack
+-- requests fill several inventory slots. Stops when the ME can't give more.
 local function pull(id, want)
-  if want <= 0 or not me or not id then return end
-  pcall(me.exportItem, { name = id, count = want }, C.meExportDir)
+  if not me or not id then return end
+  while want > 0 do
+    local ok, n = pcall(me.exportItem, { name = id, count = math.min(want, 64) }, C.meExportDir)
+    if ok and type(n) == "number" and n > 0 then want = want - n else break end
+  end
 end
 
 local function meStock()
@@ -243,6 +247,29 @@ for lx = 0, SZ.x-1 do for ly = 0, SZ.y-1 do for lz = 0, SZ.z-1 do
   if k then totals[k] = (totals[k] or 0) + 1; usedKeys[k] = true end
 end end end
 
+-- How many of each block to carry. Budget the 16 inventory slots: 1 for fuel,
+-- 1 per single component, and split the rest among the bulk blocks weighted by
+-- how many the build needs - so casing/fuel rods carry several stacks and the
+-- turtle makes far fewer dock trips.
+local targets = {}
+do
+  local bulk, singles = {}, 0
+  for k in pairs(usedKeys) do
+    if SINGLE[k] then singles = singles + 1; targets[k] = math.min(4, totals[k])
+    else bulk[#bulk+1] = k; targets[k] = 64 end
+  end
+  local extra = math.max(0, 16 - 1 - singles - #bulk)   -- spare slots for more stacks
+  while extra > 0 and #bulk > 0 do
+    local best, bestScore
+    for _, k in ipairs(bulk) do
+      local score = totals[k] / (targets[k] / 64 + 1)    -- biggest unmet demand
+      if not bestScore or score > bestScore then bestScore = score; best = k end
+    end
+    targets[best] = math.min(targets[best] + 64, math.ceil(totals[best] / 64) * 64)
+    extra = extra - 1
+  end
+end
+
 -- ----------------------------------------------------------------------
 -- Restock at the dock
 -- ----------------------------------------------------------------------
@@ -259,14 +286,13 @@ end
 
 local function restock()
   goHome()
-  if countItem(C.fuelItem) < 32 then pull(C.fuelItem, 64) end
+  if countItem(C.fuelItem) < 64 then pull(C.fuelItem, 128 - countItem(C.fuelItem)) end
   refuel()
   for key in pairs(usedKeys) do
     local id = C.blocks[key]
     if id then
-      local target = SINGLE[key] and 4 or C.stackTarget
       local have = countItem(id)
-      if have < target then pull(id, target - have) end
+      if have < targets[key] then pull(id, targets[key] - have) end
     end
   end
   goBack()
@@ -290,18 +316,17 @@ local function placeDownKey(key)
   end
 end
 
-local function lowOnStock()
-  if turtle.getFuelLevel() ~= "unlimited" and turtle.getFuelLevel() < C.fuelLowMark then return true end
-  for key in pairs(usedKeys) do
-    if not SINGLE[key] and countItem(C.blocks[key]) < 8 then return true end
-  end
-  return false
+-- Out of fuel for real = tank below the mark AND no coal left to burn.
+local function needFuel()
+  if turtle.getFuelLevel() == "unlimited" then return false end
+  refuel()
+  return turtle.getFuelLevel() < C.fuelLowMark and countItem(C.fuelItem) == 0
 end
 
 local function build()
   for ly = 0, SZ.y - 1 do
     local flightY = O.y + ly + 1
-    if lowOnStock() then restock() end
+    if needFuel() then restock() end          -- only return for fuel when truly out
     goY(flightY)
     local fwdDir = true
     for lx = 0, SZ.x - 1 do
