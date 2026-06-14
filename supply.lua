@@ -17,6 +17,28 @@
 local cfg = dofile("/config.lua")
 
 -- ---------------------------------------------------------------------------
+-- Output: redirect to an attached monitor (bigger screen) if present, and tee
+-- everything to /supply.log so the full self-check can be reviewed even after
+-- it scrolls off the fixed 51x19 computer terminal.
+-- ---------------------------------------------------------------------------
+local mon = peripheral.find("monitor")
+if mon then
+  mon.setTextScale(0.5)   -- smaller text = many more lines fit
+  term.redirect(mon)
+  term.clear(); term.setCursorPos(1, 1)
+end
+
+local _print = print
+function print(...)
+  _print(...)
+  local parts = {}
+  for i = 1, select("#", ...) do parts[i] = tostring((select(i, ...))) end
+  local h = fs.open("/supply.log", "a")
+  if h then h.writeLine(table.concat(parts, "\t")); h.close() end
+end
+if fs.exists("/supply.log") then fs.delete("/supply.log") end
+
+-- ---------------------------------------------------------------------------
 -- Peripherals
 -- ---------------------------------------------------------------------------
 local me = peripheral.find("me_bridge")
