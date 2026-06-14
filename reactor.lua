@@ -38,7 +38,7 @@ local CONFIG = {
 
   -- Where the turtle is PLACED (on top of the ME Bridge) and which way it
   -- faces: "north"(-Z) "south"(+Z) "east"(+X) "west"(-X).
-  start = { x = -45, y = -59, z = -167, facing = "south" },
+  start = { x = -45, y = -59, z = -167, facing = "west" },
 
   -- Dock cell it returns to for restock = same block, on top of the bridge.
   home = { x = -45, y = -59, z = -167 },
@@ -65,7 +65,7 @@ local CONFIG = {
     accessPort   = "bigreactors:reinforced_reactorsolidaccessport",
     computerPort = "bigreactors:reinforced_reactorcomputerport",
     coolantPort  = "bigreactors:reinforced_reactorcoolantport",
-    coolant      = nil,
+    coolant      = "minecraft:iron_block",
   },
 
   -- Components on the front (min-Z) face. lx=1..size.x-2, ly=1..size.y-2.
