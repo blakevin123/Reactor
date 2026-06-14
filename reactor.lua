@@ -47,6 +47,14 @@ local CONFIG = {
   -- nil = auto (origin.y + size.y + 3).
   cruiseY = nil,
 
+  -- Use a GPS constellation (if one is in range) to auto-detect the start
+  -- position and CORRECT dead-reckoning drift before every layer. Strongly
+  -- recommended for large builds - without it, one mis-reported move shifts the
+  -- rest of the build (e.g. fuel rods ending up on the walls). Needs a wireless
+  -- or ender modem on the turtle. With GPS on, start.x/y/z is auto-detected and
+  -- only start.facing matters. Harmless if no constellation is found.
+  useGPS = true,
+
   -- Fuel-column pattern: "checkerboard" | "full" | "spaced".
   fuelPattern = "checkerboard",
   fuelSpacing = 2,
@@ -81,6 +89,7 @@ local CONFIG = {
   fuelLowMark = 1000,            -- refuel / return to dock when fuel below this
 
   meExportDir = "up",           -- direction the bridge pushes items (into the turtle)
+  craftTimeout = 300,           -- seconds to wait for an ME autocraft before giving up
 }
 -- ======================================================================
 
@@ -127,15 +136,15 @@ end
 -- ----------------------------------------------------------------------
 local me = peripheral.find("me_bridge")
 
--- Pull up to `want` of an item into the turtle, in 64-chunks so multi-stack
--- requests fill several inventory slots. Stops when the ME can't give more.
-local function pull(id, want)
-  if not me or not id then return end
-  while want > 0 do
-    local ok, n = pcall(me.exportItem, { name = id, count = math.min(want, 64) }, C.meExportDir)
-    if ok and type(n) == "number" and n > 0 then want = want - n else break end
+-- What can the ME autocraft, and does this bridge expose a craft call?
+local craftable = {}
+if me then
+  local ok, items = pcall(me.getCraftableItems)
+  if ok and type(items) == "table" then
+    for _, it in ipairs(items) do if it.name then craftable[it.name] = true end end
   end
 end
+local canCraft = me and type(me.craftItem) == "function"
 
 local function meStock()
   local map = {}
@@ -147,11 +156,95 @@ local function meStock()
   return map
 end
 
+local function meAmount(id)
+  if not me then return 0 end
+  local ok, items = pcall(me.getItems)
+  if ok and type(items) == "table" then
+    for _, it in ipairs(items) do if it.name == id then return it.count or it.amount or 0 end end
+  end
+  return 0
+end
+
+local function isCrafting(id)
+  if not me or type(me.isItemCrafting) ~= "function" then return false end
+  local ok, v = pcall(me.isItemCrafting, { name = id })
+  return ok and v == true
+end
+
+-- Ask the ME to craft `count` of id (if it can) and wait until some is
+-- available. Returns true once at least one is in stock, false if it can't be
+-- crafted or the wait times out.  craftItem returns (ok, err); a false with an
+-- err usually just means "already crafting", so we still wait either way.
+local function craftAndWait(id, count)
+  if not canCraft or not craftable[id] then return false end
+  if not isCrafting(id) then
+    print(("ME out of %s - requesting craft of %d"):format(id, count))
+    local ok, started, err = pcall(me.craftItem, { name = id, count = count })
+    if ok and started == false and err then print("  craftItem: " .. tostring(err)) end
+  end
+  local deadline = os.clock() + (C.craftTimeout or 300)
+  while os.clock() < deadline do
+    if meAmount(id) >= 1 then return true end
+    sleep(3)
+  end
+  print("  craft timed out for " .. id)
+  return false
+end
+
+-- Pull up to `want` of an item into the turtle, in 64-chunks so multi-stack
+-- requests fill several inventory slots. If the ME runs out mid-pull it asks
+-- for a craft and waits, then keeps pulling.
+local function pull(id, want)
+  if not me or not id then return end
+  while want > 0 do
+    local ok, n = pcall(me.exportItem, { name = id, count = math.min(want, 64) }, C.meExportDir)
+    if ok and type(n) == "number" and n > 0 then
+      want = want - n
+    elseif craftAndWait(id, want) then
+      -- crafted some; loop and export again
+    else
+      break                                     -- not craftable / timed out
+    end
+  end
+end
+
+-- Kick off crafts up front for everything the build needs but the ME is short
+-- on, so they craft in parallel while the turtle works.
+local function precraft(totals, blocks)
+  if not canCraft then return end
+  local stock = meStock()
+  for key, need in pairs(totals) do
+    local id = blocks[key]
+    if id and craftable[id] then
+      local short = need - (stock[id] or 0)
+      if short > 0 and not isCrafting(id) then
+        print(("pre-crafting %d x %s"):format(short, key))
+        local ok, started, err = pcall(me.craftItem, { name = id, count = short })
+        if ok and started == false and err then print("  craftItem: " .. tostring(err)) end
+      end
+    end
+  end
+end
+
 -- ----------------------------------------------------------------------
 -- Movement (dead reckoning; digs anything in the way)
 -- ----------------------------------------------------------------------
 local pos    = { x = C.start.x, y = C.start.y, z = C.start.z }
 local facing = FNAME[C.start.facing] or error("start.facing must be north/south/east/west")
+
+-- Correct `pos` from GPS when a constellation is reachable. Facing is never
+-- corrected here (turn tracking can't drift); only position can, and that is
+-- exactly what causes blocks to land a row off. Returns true if it got a fix.
+local hasWirelessModem = peripheral.find("modem", function(_, m) return m.isWireless and m.isWireless() end) ~= nil
+local function syncPos()
+  if not (C.useGPS and hasWirelessModem) then return false end
+  local x, y, z = gps.locate(1)
+  if x then
+    pos.x = math.floor(x + 0.5); pos.y = math.floor(y + 0.5); pos.z = math.floor(z + 0.5)
+    return true
+  end
+  return false
+end
 
 local function refuel()
   if turtle.getFuelLevel() == "unlimited" then return end
@@ -327,6 +420,7 @@ local function build()
   for ly = 0, SZ.y - 1 do
     local flightY = O.y + ly + 1
     if needFuel() then restock() end          -- only return for fuel when truly out
+    syncPos()                                 -- correct any drift before placing this layer
     goY(flightY)
     local fwdDir = true
     for lx = 0, SZ.x - 1 do
@@ -358,19 +452,33 @@ local function summary()
     local id = C.blocks[key]
     if me and id then
       local have = stock[id] or 0
-      print(("  %-12s need %5d  have %6d%s"):format(key, n, have, have < n and "  <-- SHORT" or ""))
+      local note = ""
+      if have < n then note = (canCraft and craftable[id]) and "  (will craft)" or "  <-- SHORT" end
+      print(("  %-12s need %5d  have %6d%s"):format(key, n, have, note))
     else
       print(("  %-12s need %5d   %s"):format(key, n, id or "?"))
     end
   end
   print(("  TOTAL blocks: %d"):format(grand))
   print(me and "ME Bridge: connected" or "ME Bridge: NOT FOUND - place the turtle on top of the bridge")
+  if me then
+    print("ME autocraft: " .. (canCraft and "available" or "NOT available (no craftItem method on this bridge)"))
+  end
+  if C.useGPS and not hasWirelessModem then
+    print("GPS: no modem - running on dead reckoning (drift possible)")
+  elseif C.useGPS then
+    print("GPS: " .. (syncPos() and "locked (drift correction on)" or "NO FIX - check constellation"))
+  else
+    print("GPS: disabled (dead reckoning)")
+  end
   print("Building in 5s (Ctrl+T to abort)...")
 end
 
 summary()
 sleep(5)
-restock()      -- fill up (and fuel) before the first layer
+syncPos()                 -- GPS fix before we start (auto-detects start position if available)
+precraft(totals, C.blocks) -- kick off crafts for any shortfalls so they run in parallel
+restock()                 -- fill up (and fuel) before the first layer
 build()
-goHome()       -- park on the dock
+goHome()                  -- park on the dock
 print("DONE. Insert fuel via the Access Port and activate the Controller.")
