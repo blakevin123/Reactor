@@ -1,0 +1,31 @@
+Lets do the swarm Idea. Here is the design doc
+
+Master turtle's job is to swipe through its inventory and place Worker turtles (6) to its left (home). 
+Home has me_bridge under, and disk drive to its left
+Spawned turtle must auto copy programs from disk and begin working.
+
+
+*Worker Procedure
+
+Refuel only to max. Don't keep unessessary coal. (inventory space  is small)
+Get resources from me bridge ( Specific to job)
+
+*Sequencing 
+
+Create a GCODE like method for printing the reactor
+
+Job must be dividable for 6-8(open for suggestions) workers
+The division of labor should be based on the horizontal plane of the reactor.
+Each worker is assigned a specific mini chunk of the reactor to build. 
+Workers should only get blocks they immediately need i.e (Don't get control rods if working on layer 1)(Inventory small)
+
+
+
+*General suggestions
+
+Try to minimize time spent not building.
+I want to manually place things like ports. For now, leave them as casing or glass.
+Feel free to create a python backend server to handle the GCODE and worker assignments. This will allow for easier adjustments and monitoring of the build process.
+
+Extra info.
+GPS avaliable

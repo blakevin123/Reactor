@@ -1,89 +1,89 @@
-# Reactor Builder (ComputerCraft + Extreme Reactors + AE2)
+# Reactor Build Swarm
 
-Automates building an **Extreme Reactors** multiblock with a ComputerCraft
-mining turtle. The turtle places the whole structure (clearing anything in the
-way) and restocks blocks + fuel straight from an Advanced Peripherals **ME
-Bridge**.
+Builds a large **Extreme Reactors** multiblock with a swarm of ComputerCraft
+turtles coordinated by a **Python backend**. The server generates the schematic,
+splits the footprint into one chunk per worker, and serves each worker a
+per-layer GCODE manifest over HTTP. Workers restock the exact blocks they need
+from a row of **ME Bridges** (Advanced Peripherals), build their chunk, and
+return home when done.
 
-> For ATM10-style packs (CC:Tweaked + Extreme Reactors + Advanced Peripherals +
-> AE2). **Verify the block IDs for your pack** (F3+H advanced tooltips).
+Ports/controller are **left as casing/glass** — you place the real ones by hand
+afterwards.
 
----
-
-## `reactor.lua`
-
-One turtle, one program — no GPS, rednet, or second computer.
-
-### 1. Set up the dock (just two blocks)
 ```
-   [ turtle start/home ]   <- turtle sits on top of the bridge
-   [ ME Bridge          ]   <- exports "up" straight into the turtle
-```
-The turtle restocks by calling `me.exportItem({name=ID, count=N}, "up")`, which
-pushes items directly up into its own inventory — **no chest, no wired modem**.
-It pulls fuel the same way, so it can even start with an empty tank.
-
-### 2. Equip the turtle
-- A **pickaxe** (to dig/clear). That's it — fuel comes from the ME system.
-
-### 3. Install
-```
-wget https://raw.githubusercontent.com/blakevin123/Reactor/main/reactor.lua
+   Python server (PC) ── HTTP ──┬── master turtle (deploys 8 workers)
+   plan · chunks · GCODE ·      └── 8 workers (GPS nav + ME restock)
+   dock locks · monitor page
 ```
 
-### 4. Edit the CONFIG block at the top of `reactor.lua`
+## Layout
 ```
-edit reactor.lua
+server/   config.json   layout.py   server.py
+turtle/   master.lua    worker.lua  startup.lua   turtle_config.lua
 ```
-Key fields:
-- `size` — reactor outer size (incl. casing). Verify your pack's max.
-- `origin` — min corner of the reactor (smallest X/Y/Z), world coords.
-- `start` — the block the turtle is **placed on** + the way it **faces**
-  (`north/south/east/west`). The turtle dead-reckons from here, so this must be
-  exact. Read it with F3.
-- `home` — dock cell it returns to (usually = `start`); it sucks from the block
-  **below** this cell.
-- `blocks` — registry IDs for your pack.
-- `fuelPattern` (`checkerboard`/`full`/`spaced`), `reactorType`
-  (`passive`/`active`), `useGlassWalls`, `coolant`.
 
-### 5. Place the turtle on `start` (facing the set direction) and run
+## 1. Run the server
+Needs Python 3 (stdlib only — no pip installs).
 ```
-reactor
+python server/server.py
 ```
-It prints a plan + ME stock check, flags any **SHORT** items, waits 5s
-(Ctrl+T aborts), tops up at the dock, then builds bottom-to-top. When it
-finishes: insert fuel via the **Access Port** and activate the **Controller**.
+Open the monitor at `http://localhost:8080/`. You can **edit size and origin** there and hit *Save & Regenerate* (do this before deploying — it resets build state). The page shows block totals and live per-worker progress.
 
-### Tips
-- **Test small first:** set `size = {x=5,y=5,z=5}` and confirm it forms a valid
-  multiblock before scaling to 32³.
-- The turtle always restocks **before** the first layer and whenever it runs
-  low, so it starts empty and that's fine.
-- Pre-craft the single components (controller, power tap, access/computer port)
-  and enough bulk blocks; the plan printout tells you exactly how many.
-- Build site clear of obstructions is fastest, but it will dig through terrain
-  inside the build volume and along its path.
+### Let the turtles reach the server (important)
+CC:Tweaked **blocks HTTP to local/private IPs by default**, so a turtle can't hit your PC until you do one of:
+- **Allow your LAN IP** in the CC config: in `computercraft-server.toml` add an allow rule for your PC's address *above* the `$private` deny rule, then put `http://<PC-LAN-IP>:8080` in `turtle/turtle_config.lua`; **or**
+- **Tunnel** with ngrok: `ngrok http 8080`, and put the `https://…ngrok-free.app` URL in `turtle_config.lua` (public URLs aren't blocked).
 
----
-
-## Block IDs (verify!)
-
-Defaults use the `bigreactors:reinforced_*` IDs. Confirm each with F3+H, or in
-the Lua prompt next to the bridge:
+## 2. config.json
+```jsonc
+size, origin        // reactor dimensions + min corner (world coords)
+fuelPattern         // "checkerboard" | "full" | "spaced"
+useGlassWalls       // glass side walls
+workerCount         // 8
+blocks              // registry IDs (verify with F3+H!); coolant: null = air interior
+home                // worker cell on top of the HOME bridge (deploy/refuel/return)
+restock.docks[]     // one world cell per restock ME Bridge (cell sits ON TOP of each bridge)
 ```
-m = peripheral.find("me_bridge")
-for _,it in ipairs(m.getItems()) do if it.name:find("reactor") then print(it.name, it.count) end end
+
+## 3. Build the two zones in-game
+**HOME** (deploy + initial fuel + final return; you delete it afterwards):
 ```
-The bare registry name (no `[axis=y]` / `[facings=none]` blockstate suffix) is
-what goes in `blocks`.
+[ master turtle ] ── faces ──> [ HOME cell ]   <- worker spawns here
+                                [ ME Bridge ]   (under HOME)
+            [ disk drive ] on a side of HOME, holding the worker disk
+```
+**RESTOCK zone** (a row of ME Bridges so workers restock in parallel):
+```
+[dock0][dock1][dock2][dock3]      <- worker cells, each ON TOP of a bridge
+[ ME  ][ ME  ][ ME  ][ ME  ]      <- all on the same AE2 network
+```
+Each dock cell's world coords go in `restock.docks`. Keep **open air above each dock** up to the cruise altitude (`origin.y + size.y + 4 + workerIndex`). Also need a **GPS constellation** in range of the whole work area.
 
-## Troubleshooting
+## 4. Make the worker disk
+On a computer with a disk drive + floppy, copy these onto `/disk/`:
+`startup.lua`, `worker.lua`, `turtle_config.lua` (with your server URL). Move the floppy into HOME's disk drive.
 
-| Symptom | Likely cause |
-|---------|--------------|
-| `ME Bridge: NOT FOUND` | turtle isn't sitting on top of the ME Bridge, or the block isn't an Advanced Peripherals ME Bridge |
-| turtle won't move | tank empty and ME has no coal, or it's boxed in |
-| builds in the wrong place | `start` coords/facing don't match where you actually placed it |
-| item shows SHORT | not enough in AE2 — craft/stock more (the plan lists the needed count) |
-| multiblock won't form | wrong IDs, size over the pack's max, or a misplaced/duplicate component |
+## 5. Worker turtles
+Craft **8 turtles, each with a pickaxe + an ender/wireless modem** (modem for GPS), and load them into the **master's inventory**. They boot blank, copy the program off the disk, refuel on the home bridge, and fly to their chunk. (No labels are set, so spares stay stackable.)
+
+## 6. Go
+```
+python server/server.py     # PC
+master                      # master turtle: deploys all 8
+```
+Watch the monitor reach 100%. Then **manually swap in the real parts** (controller, power tap, access port, etc.) by replacing some casing/glass blocks, insert fuel, and activate.
+
+## Test small first
+Set `size` to `5×5×5` and `workerCount` to `2` (give 2 docks), deploy, and confirm a valid shell forms + the restock/refuel/junk cycle works before scaling to 32³ / 8 workers.
+
+## Notes & troubleshooting
+| Symptom | Cause |
+|---|---|
+| worker errors `HTTP API disabled` / can't reach server | CC http not allowed to your IP — see step 1 (config rule or ngrok) |
+| `no GPS fix` | GPS constellation not in range / no modem on the turtle |
+| monitor shows item totals but build leaves holes | ME ran out of a block mid-build — stock it or make it autocraftable in AE2 |
+| workers pile up at a dock | expected briefly; the per-dock lock + unique cruise altitudes resolve it |
+| underground build very slow | solid rock = lots of digging + junk; **hollow the reactor volume first** for a far faster, cleaner run |
+
+- Block IDs are pack-specific — verify each with **F3+H** advanced tooltips and put them in `config.json`.
+- The single AE2 network feeds all bridges; ensure enough storage/craft capacity (and a trash/void for dug junk if building in rock).
